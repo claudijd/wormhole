@@ -778,12 +778,12 @@ def approve_token_bridge(seed_amt: int, tmpl_sig: TmplSig, devMode: bool):
                 Extract(Txn.application_args[4], Int(6), Int(2)),
                 Extract(zb.load(), Int(0), Int(24)),
                 Itob(fee.load()),  # 8 bytes
-                If(Txn.application_args.length() == Int(7), Txn.application_args[6], Bytes(""))
+                If(Txn.application_args.length() == Int(7), Concat(Txn.sender(), Txn.application_args[6]), Bytes(""))
             )),
 
             # This one magic line should protect us from overruns/underruns and trickery..
             If(Txn.application_args.length() == Int(7), 
-               MagicAssert(Len(p.load()) == Int(133) + Len(Txn.application_args[6])),
+               MagicAssert(Len(p.load()) == Int(165) + Len(Txn.application_args[6])),
                MagicAssert(Len(p.load()) == Int(133))),
 
             InnerTxnBuilder.Begin(),
