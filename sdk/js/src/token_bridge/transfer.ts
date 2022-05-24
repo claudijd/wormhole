@@ -78,19 +78,32 @@ export async function transferFromEth(
   recipientChain: ChainId | ChainName,
   recipientAddress: Uint8Array,
   relayerFee: ethers.BigNumberish = 0,
-  overrides: PayableOverrides & { from?: string | Promise<string> } = {}
+  overrides: PayableOverrides & { from?: string | Promise<string> } = {},
+  payload: Uint8Array | null = null
 ) {
   const recipientChainId = coalesceChainId(recipientChain);
   const bridge = Bridge__factory.connect(tokenBridgeAddress, signer);
-  const v = await bridge.transferTokens(
-    tokenAddress,
-    amount,
-    recipientChainId,
-    recipientAddress,
-    relayerFee,
-    createNonce(),
-    overrides
-  );
+  const v =
+    payload === null
+      ? await bridge.transferTokens(
+          tokenAddress,
+          amount,
+          recipientChainId,
+          recipientAddress,
+          relayerFee,
+          createNonce(),
+          overrides
+        )
+      : await bridge.transferTokensWithPayload(
+          tokenAddress,
+          amount,
+          recipientChainId,
+          recipientAddress,
+          relayerFee,
+          createNonce(),
+          payload,
+          overrides
+        );
   const receipt = await v.wait();
   return receipt;
 }
@@ -102,20 +115,34 @@ export async function transferFromEthNative(
   recipientChain: ChainId | ChainId,
   recipientAddress: Uint8Array,
   relayerFee: ethers.BigNumberish = 0,
-  overrides: PayableOverrides & { from?: string | Promise<string> } = {}
+  overrides: PayableOverrides & { from?: string | Promise<string> } = {},
+  payload: Uint8Array | null = null
 ) {
   const recipientChainId = coalesceChainId(recipientChain);
   const bridge = Bridge__factory.connect(tokenBridgeAddress, signer);
-  const v = await bridge.wrapAndTransferETH(
-    recipientChainId,
-    recipientAddress,
-    relayerFee,
-    createNonce(),
-    {
-      ...overrides,
-      value: amount,
-    }
-  );
+  const v =
+    payload === null
+      ? await bridge.wrapAndTransferETH(
+          recipientChainId,
+          recipientAddress,
+          relayerFee,
+          createNonce(),
+          {
+            ...overrides,
+            value: amount,
+          }
+        )
+      : await bridge.wrapAndTransferETHWithPayload(
+          recipientChainId,
+          recipientAddress,
+          relayerFee,
+          createNonce(),
+          payload,
+          {
+            ...overrides,
+            value: amount,
+          }
+        );
   const receipt = await v.wait();
   return receipt;
 }
@@ -127,11 +154,39 @@ export async function transferFromTerra(
   amount: string,
   recipientChain: ChainId | ChainName,
   recipientAddress: Uint8Array,
-  relayerFee: string = "0"
+  relayerFee: string = "0",
+  payload: Uint8Array | null = null
 ) {
   const recipientChainId = coalesceChainId(recipientChain);
   const nonce = Math.round(Math.random() * 100000);
   const isNativeAsset = isNativeDenom(tokenAddress);
+  const mk_initiate_transfer = (info: object) =>
+    payload
+      ? {
+          initiate_transfer_with_payload: {
+            asset: {
+              amount,
+              info,
+            },
+            recipient_chain: recipientChainId,
+            recipient: Buffer.from(recipientAddress).toString("base64"),
+            fee: relayerFee,
+            nonce: nonce,
+            payload: payload,
+          },
+        }
+      : {
+          initiate_transfer: {
+            asset: {
+              amount,
+              info,
+            },
+            recipient_chain: recipientChainId,
+            recipient: Buffer.from(recipientAddress).toString("base64"),
+            fee: relayerFee,
+            nonce: nonce,
+          },
+        };
   return isNativeAsset
     ? [
         new MsgExecuteContract(
@@ -145,22 +200,11 @@ export async function transferFromTerra(
         new MsgExecuteContract(
           walletAddress,
           tokenBridgeAddress,
-          {
-            initiate_transfer: {
-              asset: {
-                amount,
-                info: {
-                  native_token: {
-                    denom: tokenAddress,
-                  },
-                },
-              },
-              recipient_chain: recipientChainId,
-              recipient: Buffer.from(recipientAddress).toString("base64"),
-              fee: relayerFee,
-              nonce: nonce,
+          mk_initiate_transfer({
+            native_token: {
+              denom: tokenAddress,
             },
-          },
+          }),
           {}
         ),
       ]
@@ -182,22 +226,11 @@ export async function transferFromTerra(
         new MsgExecuteContract(
           walletAddress,
           tokenBridgeAddress,
-          {
-            initiate_transfer: {
-              asset: {
-                amount: amount,
-                info: {
-                  token: {
-                    contract_addr: tokenAddress,
-                  },
-                },
-              },
-              recipient_chain: recipientChainId,
-              recipient: Buffer.from(recipientAddress).toString("base64"),
-              fee: relayerFee,
-              nonce: nonce,
+          mk_initiate_transfer({
+            token: {
+              contract_addr: tokenAddress,
             },
-          },
+          }),
           {}
         ),
       ];
@@ -211,7 +244,8 @@ export async function transferNativeSol(
   amount: BigInt,
   targetAddress: Uint8Array,
   targetChain: ChainId | ChainName,
-  relayerFee: BigInt = BigInt(0)
+  relayerFee: BigInt = BigInt(0),
+  payload: Uint8Array | null = null
 ) {
   //https://github.com/solana-labs/solana-program-library/blob/master/token/js/client/token.js
   const rentBalance = await Token.getMinBalanceRentForExemptAccount(connection);
@@ -243,8 +277,11 @@ export async function transferNativeSol(
   );
 
   //Normal approve & transfer instructions, except that the wSOL is sent from the ancillary account.
-  const { transfer_native_ix, approval_authority_address } =
-    await importTokenWasm();
+  const {
+    transfer_native_ix,
+    transfer_native_with_payload_ix,
+    approval_authority_address,
+  } = await importTokenWasm();
   const nonce = createNonce().readUInt32LE(0);
   const transferIx = await getBridgeFeeIx(
     connection,
@@ -262,19 +299,34 @@ export async function transferNativeSol(
   let messageKey = Keypair.generate();
 
   const ix = ixFromRust(
-    transfer_native_ix(
-      tokenBridgeAddress,
-      bridgeAddress,
-      payerAddress,
-      messageKey.publicKey.toString(),
-      ancillaryKeypair.publicKey.toString(),
-      WSOL_ADDRESS,
-      nonce,
-      amount,
-      relayerFee,
-      targetAddress,
-      coalesceChainId(targetChain)
-    )
+    payload !== null
+      ? transfer_native_with_payload_ix(
+          tokenBridgeAddress,
+          bridgeAddress,
+          payerAddress,
+          messageKey.publicKey.toString(),
+          ancillaryKeypair.publicKey.toString(),
+          WSOL_ADDRESS,
+          nonce,
+          amount,
+          relayerFee,
+          targetAddress,
+          coalesceChainId(targetChain),
+          payload
+        )
+      : transfer_native_ix(
+          tokenBridgeAddress,
+          bridgeAddress,
+          payerAddress,
+          messageKey.publicKey.toString(),
+          ancillaryKeypair.publicKey.toString(),
+          WSOL_ADDRESS,
+          nonce,
+          amount,
+          relayerFee,
+          targetAddress,
+          coalesceChainId(targetChain)
+        )
   );
 
   //Close the ancillary account for cleanup. Payer address receives any remaining funds
@@ -313,7 +365,8 @@ export async function transferFromSolana(
   originAddress?: Uint8Array,
   originChain?: ChainId | ChainName,
   fromOwnerAddress?: string,
-  relayerFee: BigInt = BigInt(0)
+  relayerFee: BigInt = BigInt(0),
+  payload: Uint8Array | null = null
 ) {
   const originChainId: ChainId | undefined = originChain
     ? coalesceChainId(originChain)
@@ -327,6 +380,8 @@ export async function transferFromSolana(
   const {
     transfer_native_ix,
     transfer_wrapped_ix,
+    transfer_native_with_payload_ix,
+    transfer_wrapped_with_payload_ix,
     approval_authority_address,
   } = await importTokenWasm();
   const approvalIx = Token.createApproveInstruction(
@@ -345,18 +400,50 @@ export async function transferFromSolana(
   }
   const ix = ixFromRust(
     isSolanaNative
-      ? transfer_native_ix(
+      ? payload !== null
+        ? transfer_native_with_payload_ix(
+            tokenBridgeAddress,
+            bridgeAddress,
+            payerAddress,
+            messageKey.publicKey.toString(),
+            fromAddress,
+            mintAddress,
+            nonce,
+            amount,
+            relayerFee,
+            targetAddress,
+            coalesceChainId(targetChain),
+            payload
+          )
+        : transfer_native_ix(
+            tokenBridgeAddress,
+            bridgeAddress,
+            payerAddress,
+            messageKey.publicKey.toString(),
+            fromAddress,
+            mintAddress,
+            nonce,
+            amount,
+            relayerFee,
+            targetAddress,
+            coalesceChainId(targetChain)
+          )
+      : payload !== null
+      ? transfer_wrapped_with_payload_ix(
           tokenBridgeAddress,
           bridgeAddress,
           payerAddress,
           messageKey.publicKey.toString(),
           fromAddress,
-          mintAddress,
+          fromOwnerAddress || payerAddress,
+          originChainId as number, // checked by isSolanaNative
+          originAddress as Uint8Array, // checked by throw
           nonce,
           amount,
           relayerFee,
           targetAddress,
-          coalesceChainId(targetChain)
+          coalesceChainId(targetChain),
+          payload
         )
       : transfer_wrapped_ix(
           tokenBridgeAddress,
@@ -406,7 +493,7 @@ export async function transferFromAlgorand(
   receiver: string,
   chain: ChainId | ChainName,
   fee: bigint,
-  payload : Uint8Array | null = null
+  payload: Uint8Array | null = null
 ): Promise<TransactionSignerPair[]> {
   const recipientChainId = coalesceChainId(chain);
   const tokenAddr: string = getApplicationAddress(tokenBridgeId);
@@ -526,8 +613,8 @@ export async function transferFromAlgorand(
     bigIntToBytes(recipientChainId, 8),
     bigIntToBytes(fee, 8),
   ];
-  if (payload != null) {
-      args.push(payload);
+  if (payload !== null) {
+    args.push(payload);
   }
   let acTxn = makeApplicationCallTxnFromObject({
     from: senderAddr,
