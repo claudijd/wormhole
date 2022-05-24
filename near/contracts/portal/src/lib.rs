@@ -42,77 +42,11 @@ pub trait TokenBridgeCallback {
     fn submit_vaa_callback(&mut self);
 }
 
-#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
-pub struct FTContractMeta {
-    metadata: FungibleTokenMetadata,
-    vaa: Vec<u8>,
-    sequence: u64,
-}
-
-#[near_bindgen]
-#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
-pub struct FTContract {
-    token: FungibleToken,
-    meta: LazyOption<FTContractMeta>,
-}
-
-#[near_bindgen]
-impl FTContract {
-    fn on_account_closed(&mut self, account_id: AccountId, balance: Balance) {
-        env::panic_str("an_account_closed");
-    }
-
-    fn on_tokens_burned(&mut self, account_id: AccountId, amount: Balance) {
-        env::panic_str("on_tokens_burned");
-    }
-}
-
-near_contract_standards::impl_fungible_token_core!(FTContract, token, on_tokens_burned);
-near_contract_standards::impl_fungible_token_storage!(FTContract, token, on_account_closed);
-
-#[near_bindgen]
-impl FungibleTokenMetadataProvider for FTContract {
-    fn ft_metadata(&self) -> FungibleTokenMetadata {
-        self.meta.get().unwrap().metadata
-    }
-}
-
-fn new_ftcontract(
-    owner_id: AccountId,
-    metadata: FungibleTokenMetadata,
-    asset_meta: Vec<u8>,
-    seq_number: u64,
-) -> FTContract {
-    metadata.assert_valid();
-
-    let mut ft_vec = Vec::with_capacity(64);
-    ft_vec.extend(b"ft".to_vec());
-    ft_vec.extend(&*asset_meta);
-    ft_vec.extend(owner_id.as_bytes());
-
-    let mut md_vec = Vec::with_capacity(64);
-    md_vec.extend(b"md".to_vec());
-    md_vec.extend(&*asset_meta);
-    md_vec.extend(owner_id.as_bytes());
-
-    let meta = FTContractMeta {
-        metadata: metadata,
-        vaa: asset_meta,
-        sequence: seq_number,
-    };
-
-    let this = FTContract {
-        token: FungibleToken::new(env::sha256(&ft_vec)),
-        meta: LazyOption::new(env::sha256(&md_vec), Some(&meta)),
-    };
-    this
-}
-
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct TokenBridge {
     dups: UnorderedSet<Vec<u8>>,
     contracts: LookupMap<u16, Vec<u8>>,
-    tokens: LookupMap<Vec<u8>, FTContract>,
+//    tokens: LookupMap<Vec<u8>, FTContract>,
     booted: bool,
     core: AccountId,
 }
@@ -122,7 +56,7 @@ impl Default for TokenBridge {
         Self {
             dups: UnorderedSet::new(b"d".to_vec()),
             contracts: LookupMap::new(b"c".to_vec()),
-            tokens: LookupMap::new(b"t".to_vec()),
+//            tokens: LookupMap::new(b"t".to_vec()),
             booted: false,
             core: AccountId::new_unchecked("".to_string()),
         }
@@ -205,21 +139,21 @@ fn vaa_asset_meta(storage: &mut TokenBridge, vaa: state::ParsedVAA) {
 
     let wname = get_string_from_32(&name) + " (Wormhole)";
 
-    if storage.tokens.contains_key(&tkey) {
-        let mut ft = storage.tokens.get(&tkey).unwrap();
-        let mut md = ft.meta.get().unwrap();
-
-        if md.sequence > vaa.sequence {
-            env::panic_str("ExpiredAssetMetaVaa");
-        }
-        md.sequence = vaa.sequence;
-
-        md.metadata.name = wname;
-        md.metadata.symbol = get_string_from_32(&symbol);
-        ft.meta.replace(&md);
-
-        return;
-    }
+//    if storage.tokens.contains_key(&tkey) {
+//        let mut ft = storage.tokens.get(&tkey).unwrap();
+//        let mut md = ft.meta.get().unwrap();
+//
+//        if md.sequence > vaa.sequence {
+//            env::panic_str("ExpiredAssetMetaVaa");
+//        }
+//        md.sequence = vaa.sequence;
+//
+//        md.metadata.name = wname;
+//        md.metadata.symbol = get_string_from_32(&symbol);
+//        ft.meta.replace(&md);
+//
+//        return;
+//    }
 
     // Decimals are capped at 8 in wormhole
     if decimals > 8 {
@@ -240,11 +174,11 @@ fn vaa_asset_meta(storage: &mut TokenBridge, vaa: state::ParsedVAA) {
         decimals: decimals,
     };
 
-    let mut token = new_ftcontract(env::current_account_id(), ft, data.to_vec(), vaa.sequence);
+//    let mut token = new_ftcontract(env::current_account_id(), ft, data.to_vec(), vaa.sequence);
 
-    storage.tokens.insert(&tkey, &token);
+//    storage.tokens.insert(&tkey, &token);
 
-    token.storage_deposit(None, None);
+//    token.storage_deposit(None, None);
 }
 
 fn vaa_transfer_with_payload(storage: &mut TokenBridge, vaa: state::ParsedVAA) {

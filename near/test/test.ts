@@ -246,21 +246,21 @@ async function test() {
     console.log("Now the fun stuff... lets create some USDC");
     await tokenUseContract.submit_vaa({ args: { vaa: vaa }, gas: 300000000000000});
 
-    seq = seq + 1
-
-    vaa = ts.genAssetMeta(ts.guardianPrivKeys, 1, 1, seq + 1, "4523c3F29447d1f32AEa95BEBD00383c4640F1b4", 1, 8, "USDC2", "CircleCoin2");
-    console.log("Lets change the name and description");
-    await tokenUseContract.submit_vaa({ args: { vaa: vaa }, gas: 300000000000000});
-
-    try {
-        vaa = ts.genAssetMeta(ts.guardianPrivKeys, 1, 1, seq, "4523c3F29447d1f32AEa95BEBD00383c4640F1b4", 1, 8, "USDC3", "CircleCoin3");
-        console.log("Lets change the name and description.. using a older sequence number");
-        await tokenUseContract.submit_vaa({ args: { vaa: vaa }, gas: 300000000000000});
-        console.log("This should have thrown a exception..");
-        process.exit(1);
-    } catch { 
-        console.log("Exception thrown.. that is correct...   ");
-    }
+//    seq = seq + 1
+//
+//    vaa = ts.genAssetMeta(ts.guardianPrivKeys, 1, 1, seq + 1, "4523c3F29447d1f32AEa95BEBD00383c4640F1b4", 1, 8, "USDC2", "CircleCoin2");
+//    console.log("Lets change the name and description");
+//    await tokenUseContract.submit_vaa({ args: { vaa: vaa }, gas: 300000000000000});
+//
+//    try {
+//        vaa = ts.genAssetMeta(ts.guardianPrivKeys, 1, 1, seq, "4523c3F29447d1f32AEa95BEBD00383c4640F1b4", 1, 8, "USDC3", "CircleCoin3");
+//        console.log("Lets change the name and description.. using a older sequence number");
+//        await tokenUseContract.submit_vaa({ args: { vaa: vaa }, gas: 300000000000000});
+//        console.log("This should have thrown a exception..");
+//        process.exit(1);
+//    } catch { 
+//        console.log("Exception thrown.. that is correct...   ");
+//    }
 
     seq = seq + 2
 
